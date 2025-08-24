@@ -10,14 +10,15 @@ let wheelSpinning = false;
 let wheel;
 let wheelCanvas;
 let wheelOptions = [
-    { text: "20 монет", color: "#e94560", value: 20 },
-    { text: "50 монет", color: "#00b4d8", value: 50 },
-    { text: "10 монет", color: "#ff9e00", value: 10 },
-    { text: "100 монет", color: "#2dc659", value: 100 },
-    { text: "5 монет", color: "#9d4edd", value: 5 },
-    { text: "0 монет", color: "#f72585", value: 0 },
-    { text: "30 монет", color: "#4361ee", value: 30 },
-    { text: "Крутить again", color: "#ff5400", value: "again" }
+    { text: "20 монет", color: "#e94560", value: 20, weight: 15 },
+    { text: "50 монет", color: "#00b4d8", value: 50, weight: 8 },
+    { text: "10 монет", color: "#ff9e00", value: 10, weight: 20 },
+    { text: "100 монет", color: "#2dc659", value: 100, weight: 5 },
+    { text: "5 монет", color: "#9d4edd", value: 5, weight: 25 },
+    { text: "0 монет", color: "#f72585", value: 0, weight: 10 },
+    { text: "30 монет", color: "#4361ee", value: 30, weight: 12 },
+    { text: "x2 множитель", color: "#ff5400", value: "multiplier", weight: 3 },
+    { text: "Банкрот", color: "#888", value: "bankrupt", weight: 2 }
 ];
 let rouletteBet = 10;
 let slotBet = 5;
@@ -25,14 +26,32 @@ let diceBet = 5;
 let coinBet = 5;
 let coinWin = 10;
 let prizeBet = 10;
-let prizeOptions = ["20 монет", "10 монет", "50 монет"];
+let prizeOptions = ["20 монет", "10 монет", "50 монет", "0 монет", "30 монет"];
 let prizesRevealed = false;
-let slotSymbols = ['🍒', '🍋', '🍊', '🍇', '🔔', '⭐', '💎', '7️⃣'];
+let slotSymbols = [
+    { symbol: '🍒', value: 2, weight: 30 },
+    { symbol: '🍋', value: 3, weight: 25 },
+    { symbol: '🍊', value: 4, weight: 20 },
+    { symbol: '🍇', value: 5, weight: 15 },
+    { symbol: '🔔', value: 10, weight: 8 },
+    { symbol: '⭐', value: 15, weight: 5 },
+    { symbol: '💎', value: 20, weight: 3 },
+    { symbol: '7️⃣', value: 50, weight: 1 }
+];
+let playerStats = {
+    gamesPlayed: 0,
+    totalWins: 0,
+    totalLosses: 0,
+    coinsWon: 0,
+    coinsLost: 0,
+    luckFactor: 1.0
+};
 
 // Инициализация при загрузке
 window.onload = function() {
     updateCoinsDisplay();
     initWheel();
+    loadStats();
     
     // Закрытие модального окна при клике вне его
     window.onclick = function(event) {
@@ -43,38 +62,71 @@ window.onload = function() {
             }
         }
     };
+    
+    // Добавляем кнопку статистики
+    addStatsButton();
 };
+
+// Сохранение и загрузка статистики
+function saveStats() {
+    localStorage.setItem('playerStats', JSON.stringify(playerStats));
+    localStorage.setItem('globalCoins', globalCoins.toString());
+}
+
+function loadStats() {
+    const savedStats = localStorage.getItem('playerStats');
+    const savedCoins = localStorage.getItem('globalCoins');
+    
+    if (savedStats) playerStats = JSON.parse(savedStats);
+    if (savedCoins) globalCoins = parseInt(savedCoins);
+}
+
+function addStatsButton() {
+    const statsBtn = document.createElement('button');
+    statsBtn.textContent = '📊 Статистика';
+    statsBtn.className = 'stats-btn';
+    statsBtn.onclick = showStats;
+    document.body.appendChild(statsBtn);
+}
+
+// Улучшенная система рандома с весами
+function getWeightedRandom(items) {
+    const totalWeight = items.reduce((sum, item) => sum + (item.weight || 1), 0);
+    let random = Math.random() * totalWeight;
+    
+    for (const item of items) {
+        random -= item.weight || 1;
+        if (random <= 0) return item;
+    }
+    
+    return items[items.length - 1];
+}
 
 // Управление монетами
 function updateCoinsDisplay() {
     document.getElementById('global-coins').textContent = globalCoins;
+    saveStats();
+}
+
+function addCoins(amount, reason = "") {
+    const luckyAmount = Math.floor(amount * playerStats.luckFactor);
+    globalCoins += luckyAmount;
+    playerStats.coinsWon += luckyAmount;
     
-    // Обновляем статус кнопок в зависимости от количества монет
-    const gameButtons = document.querySelectorAll('.play-btn:not(.add-coins-btn)');
-    gameButtons.forEach(btn => {
-        const gameCard = btn.closest('.game-card');
-        if (gameCard) {
-            const costMatch = gameCard.querySelector('.game-description').textContent.match(/Стоимость: (\d+) монет/);
-            if (costMatch && globalCoins < parseInt(costMatch[1])) {
-                btn.disabled = true;
-                btn.title = "Недостаточно монет";
-            } else {
-                btn.disabled = false;
-                btn.title = "";
-            }
-        }
-    });
-}
-
-function addCoins(amount) {
-    globalCoins += amount;
     updateCoinsDisplay();
-    showNotification(`+${amount} монет!`, 'success');
+    showNotification(`+${luckyAmount} монет! ${reason}`, 'success');
+    
+    if (luckyAmount > amount * 1.2) {
+        playerStats.luckFactor += 0.02;
+    }
 }
 
-function deductCoins(amount) {
+function deductCoins(amount, reason = "") {
     if (globalCoins >= amount) {
         globalCoins -= amount;
+        playerStats.coinsLost += amount;
+        playerStats.gamesPlayed++;
+        
         updateCoinsDisplay();
         return true;
     }
@@ -82,34 +134,8 @@ function deductCoins(amount) {
     return false;
 }
 
-function showNotification(message, type) {
-    const notification = document.createElement('div');
-    notification.textContent = message;
-    notification.style.position = 'fixed';
-    notification.style.top = '20px';
-    notification.style.left = '50%';
-    notification.style.transform = 'translateX(-50%)';
-    notification.style.padding = '10px 20px';
-    notification.style.borderRadius = '5px';
-    notification.style.zIndex = '10000';
-    notification.style.fontWeight = 'bold';
-    
-    if (type === 'success') {
-        notification.style.background = '#2dc659';
-    } else {
-        notification.style.background = '#e94560';
-    }
-    
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        notification.remove();
-    }, 3000);
-}
-
 // Функции для открытия/закрытия игр
 function openGame(gameId) {
-    // Проверяем, хватает ли монет для игры
     let cost = 0;
     switch (gameId) {
         case 'russian-roulette': cost = rouletteBet; break;
@@ -144,7 +170,6 @@ function applyRouletteSettings() {
     bulletsCount = parseInt(document.getElementById('bullets-count').value) || 1;
     rouletteBet = parseInt(document.getElementById('roulette-bet').value) || 10;
     
-    // Ограничения
     if (bulletsCount >= chambersCount) {
         bulletsCount = chambersCount - 1;
         document.getElementById('bullets-count').value = bulletsCount;
@@ -160,12 +185,15 @@ function applyRouletteSettings() {
 }
 
 function spinBarrel() {
-    if (!deductCoins(rouletteBet)) return;
+    if (!deductCoins(rouletteBet, "Русская рулетка")) return;
     
     const revolver = document.getElementById('revolver');
     revolver.classList.add('spin');
     
-    bulletChamber = Math.floor(Math.random() * chambersCount);
+    const luckModifier = Math.max(0.5, Math.min(1.5, playerStats.luckFactor));
+    const effectiveChambers = Math.floor(chambersCount / luckModifier);
+    
+    bulletChamber = Math.floor(Math.random() * effectiveChambers);
     currentChamber = 0;
     
     setTimeout(() => {
@@ -182,31 +210,31 @@ function pullTrigger() {
     const roundCounter = document.getElementById('round-counter');
     
     if (currentChamber === bulletChamber) {
-        // Игрок проиграл
         revolver.textContent = '💥';
         revolver.classList.add('shake');
         status.textContent = 'Вы проиграли! Игра окончена.';
         document.getElementById('trigger-button').disabled = true;
         document.getElementById('spin-button').disabled = true;
+        playerStats.totalLosses++;
+        playerStats.luckFactor = Math.max(0.8, playerStats.luckFactor - 0.1);
         
         setTimeout(() => {
             resetRoulette();
         }, 3000);
     } else {
-        // Игрок выжил
         revolver.classList.add('shake');
         status.textContent = 'Щёлк! Пустой выстрел. Вы выжили!';
         currentChamber++;
         round++;
         roundCounter.textContent = round;
         
-        // Проверяем, не достигли ли максимального количества раундов
         if (round > maxRounds) {
             const winAmount = rouletteBet * 10;
-            addCoins(winAmount);
+            addCoins(winAmount, "Победа в рулетке!");
             status.textContent = `Поздравляем! Вы прошли все раунды и выиграли ${winAmount} монет!`;
             document.getElementById('trigger-button').disabled = true;
             document.getElementById('spin-button').disabled = true;
+            playerStats.totalWins++;
             
             setTimeout(() => {
                 resetRoulette();
@@ -220,6 +248,7 @@ function pullTrigger() {
             document.getElementById('trigger-button').disabled = true;
         }, 1000);
     }
+    saveStats();
 }
 
 function resetRoulette() {
@@ -241,6 +270,7 @@ function addWheelOption() {
     newOption.innerHTML = `
         <input type="text" placeholder="Вариант приза">
         <input type="color" value="${getRandomColor()}">
+        <input type="number" value="10" min="1" max="100" placeholder="Вес">
         <button onclick="removeWheelOption(this)">❌</button>
     `;
     optionsContainer.appendChild(newOption);
@@ -261,16 +291,22 @@ function applyWheelSettings() {
     for (let row of optionRows) {
         const textInput = row.querySelector('input[type="text"]');
         const colorInput = row.querySelector('input[type="color"]');
+        const weightInput = row.querySelector('input[type="number"]');
         
         if (textInput.value.trim()) {
-            // Парсим значение из текста (ищем числа)
             const valueMatch = textInput.value.match(/(\d+)/);
             const value = valueMatch ? parseInt(valueMatch[1]) : 0;
+            const weight = weightInput ? parseInt(weightInput.value) || 10 : 10;
+            
+            let specialValue = value;
+            if (textInput.value.toLowerCase().includes('банкрот')) specialValue = 'bankrupt';
+            if (textInput.value.toLowerCase().includes('множитель')) specialValue = 'multiplier';
             
             options.push({
                 text: textInput.value,
                 color: colorInput.value,
-                value: value
+                value: specialValue,
+                weight: weight
             });
         }
     }
@@ -299,7 +335,6 @@ function drawWheel() {
     wheelOptions.forEach((option, i) => {
         const angle = i * sliceAngle;
         
-        // Рисуем сегмент
         wheel.beginPath();
         wheel.moveTo(center, center);
         wheel.arc(center, center, radius, angle, angle + sliceAngle);
@@ -308,7 +343,6 @@ function drawWheel() {
         wheel.fill();
         wheel.stroke();
         
-        // Рисуем текст
         wheel.save();
         wheel.translate(center, center);
         wheel.rotate(angle + sliceAngle / 2);
@@ -319,7 +353,6 @@ function drawWheel() {
         wheel.restore();
     });
     
-    // Рисуем центр колеса
     wheel.beginPath();
     wheel.arc(center, center, 10, 0, 2 * Math.PI);
     wheel.fillStyle = '#1a1a2e';
@@ -329,7 +362,7 @@ function drawWheel() {
 
 function spinWheel() {
     if (wheelSpinning) return;
-    if (!deductCoins(15)) return;
+    if (!deductCoins(15, "Колесо фортуны")) return;
     
     wheelSpinning = true;
     const resultElement = document.getElementById('wheel-result');
@@ -337,10 +370,20 @@ function spinWheel() {
     resultElement.textContent = '';
     spinButton.disabled = true;
     
-    const spinDuration = 3000 + Math.random() * 2000; // 3-5 секунд
+    const adaptiveWeights = wheelOptions.map(opt => {
+        let weight = opt.weight;
+        if (opt.value === 'bankrupt' && playerStats.luckFactor > 1.1) {
+            weight = Math.max(1, weight - 2);
+        }
+        if (typeof opt.value === 'number' && opt.value > 0 && playerStats.gamesPlayed < 10) {
+            weight += 3;
+        }
+        return { ...opt, weight };
+    });
+    
+    const spinDuration = 3000 + Math.random() * 2000;
     const startTime = Date.now();
     
-    // Анимация вращения
     const spinInterval = setInterval(() => {
         const elapsed = Date.now() - startTime;
         const progress = elapsed / spinDuration;
@@ -350,27 +393,39 @@ function spinWheel() {
             wheelSpinning = false;
             spinButton.disabled = false;
             
-            // Определяем результат
-            const resultIndex = Math.floor(Math.random() * wheelOptions.length);
-            const result = wheelOptions[resultIndex];
-            
-            if (result.value === "again") {
-                resultElement.textContent = `Вы выиграли: Бесплатное вращение!`;
-                addCoins(15); // Возвращаем монеты
-            } else {
-                resultElement.textContent = `Вы выиграли: ${result.text}!`;
-                if (result.value > 0) {
-                    addCoins(result.value);
-                }
-            }
+            const result = getWeightedRandom(adaptiveWeights);
+            handleWheelResult(result);
             return;
         }
         
-        // Вращаем колесо с замедлением
-        const easeOut = 1 - Math.pow(1 - progress, 3); // easing function
-        const rotation = easeOut * 10 * Math.PI;
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        const rotation = easeOut * 15 * Math.PI;
         wheelCanvas.style.transform = `rotate(${rotation}rad)`;
     }, 16);
+}
+
+function handleWheelResult(result) {
+    const resultElement = document.getElementById('wheel-result');
+    
+    if (result.value === "multiplier") {
+        const multiplier = 2 + Math.floor(Math.random() * 3);
+        const bonus = 15 * multiplier;
+        addCoins(bonus, `Множитель x${multiplier}!`);
+        resultElement.textContent = `Множитель x${multiplier}! +${bonus} монет`;
+        playerStats.luckFactor += 0.05;
+    } 
+    else if (result.value === "bankrupt") {
+        resultElement.textContent = "Банкрот! Ставка не возвращается";
+        playerStats.totalLosses++;
+        playerStats.luckFactor = Math.max(0.8, playerStats.luckFactor - 0.1);
+    }
+    else if (typeof result.value === "number") {
+        addCoins(result.value, "Колесо фортуны");
+        resultElement.textContent = `Вы выиграли: ${result.text}!`;
+        playerStats.totalWins++;
+    }
+    
+    saveStats();
 }
 
 // Однорукий бандит
@@ -381,9 +436,8 @@ function applySlotSettings() {
 }
 
 function spinSlots() {
-    if (!deductCoins(slotBet)) return;
+    if (!deductCoins(slotBet, "Однорукий бандит")) return;
     
-    const balanceElement = document.getElementById('balance');
     const slots = [document.getElementById('slot1'), document.getElementById('slot2'), document.getElementById('slot3')];
     const resultElement = document.getElementById('slot-result');
     const spinButton = document.getElementById('slot-spin-btn');
@@ -391,48 +445,69 @@ function spinSlots() {
     resultElement.textContent = 'Крутим...';
     spinButton.disabled = true;
     
-    // Запускаем анимацию для каждого слота
+    const difficulty = globalCoins < 50 ? 0.7 : globalCoins > 200 ? 0.3 : 0.5;
+    
     slots.forEach((slot, index) => {
         let spins = 0;
-        const maxSpins = 10 + index * 5; // Каждый следующий слот крутится дольше
+        const maxSpins = 10 + index * 5;
         
         const spinInterval = setInterval(() => {
-            const randomSymbol = slotSymbols[Math.floor(Math.random() * slotSymbols.length)];
-            slot.textContent = randomSymbol;
+            const randomSymbol = getWeightedRandom(slotSymbols);
+            slot.textContent = randomSymbol.symbol;
+            slot.dataset.value = randomSymbol.value;
             
             spins++;
             if (spins >= maxSpins) {
                 clearInterval(spinInterval);
-                
-                // После остановки последнего слота проверяем результат
                 if (index === 2) {
-                    checkSlotResult();
+                    checkSlotResult(difficulty);
                     spinButton.disabled = false;
                 }
             }
         }, 100);
     });
+}
+
+function checkSlotResult(difficulty) {
+    const slot1 = document.getElementById('slot1');
+    const slot2 = document.getElementById('slot2');
+    const slot3 = document.getElementById('slot3');
     
-    function checkSlotResult() {
-        const slot1 = document.getElementById('slot1').textContent;
-        const slot2 = document.getElementById('slot2').textContent;
-        const slot3 = document.getElementById('slot3').textContent;
-        
-        if (slot1 === slot2 && slot2 === slot3) {
-            // Джекпот!
-            const winAmount = slotBet * 40;
-            addCoins(winAmount);
-            resultElement.textContent = `Джекпот! Вы выиграли ${winAmount} монет!`;
-            document.querySelector('.slots-container').classList.add('win');
-        } else if (slot1 === slot2 || slot2 === slot3 || slot1 === slot3) {
-            // Два одинаковых символа
-            const winAmount = slotBet * 6;
-            addCoins(winAmount);
-            resultElement.textContent = `Два одинаковых! Вы выиграли ${winAmount} монет!`;
-        } else {
-            resultElement.textContent = 'Повезёт в следующий раз!';
+    const val1 = parseInt(slot1.dataset.value);
+    const val2 = parseInt(slot2.dataset.value);
+    const val3 = parseInt(slot3.dataset.value);
+    
+    let winAmount = 0;
+    let message = '';
+    
+    if (slot1.textContent === slot2.textContent && slot2.textContent === slot3.textContent) {
+        winAmount = Math.floor((val1 + val2 + val3) * 10 * difficulty);
+        message = `ДЖЕКПОТ! ${slot1.textContent} ${slot2.textContent} ${slot3.textContent} - ${winAmount} монет!`;
+        playerStats.luckFactor += 0.1;
+    } 
+    else if (slot1.textContent === slot2.textContent || slot2.textContent === slot3.textContent || slot1.textContent === slot3.textContent) {
+        const matchedValue = slot1.textContent === slot2.textContent ? val1 : val3;
+        winAmount = Math.floor(matchedValue * 6 * difficulty);
+        message = `Два одинаковых! +${winAmount} монет`;
+    }
+    else {
+        const values = [val1, val2, val3].sort((a, b) => a - b);
+        if (values[0] === values[1] - 1 && values[1] === values[2] - 1) {
+            winAmount = Math.floor((val1 + val2 + val3) * 2 * difficulty);
+            message = `Последовательность! +${winAmount} монет`;
         }
     }
+    
+    if (winAmount > 0) {
+        addCoins(winAmount, "Слоты");
+        playerStats.totalWins++;
+    } else {
+        message = 'Повезёт в следующий раз!';
+        playerStats.totalLosses++;
+    }
+    
+    resultElement.textContent = message;
+    saveStats();
 }
 
 // Кости
@@ -443,7 +518,7 @@ function applyDiceSettings() {
 }
 
 function rollDice(count) {
-    if (!deductCoins(diceBet)) return;
+    if (!deductCoins(diceBet, `Кости (${count} кубика)`)) return;
     
     const diceResult = document.getElementById('dice-result');
     const diceSum = document.getElementById('dice-sum');
@@ -451,28 +526,47 @@ function rollDice(count) {
     
     let result = '';
     let sum = 0;
+    let values = [];
     
     for (let i = 0; i < count; i++) {
         const value = Math.floor(Math.random() * 6) + 1;
+        values.push(value);
         result += getDiceEmoji(value) + ' ';
         sum += value;
     }
     
     diceResult.innerHTML = result;
     
-    // Вычисляем выигрыш
     let winAmount = 0;
     if (count === 1) {
-        winAmount = value * diceBet;
+        winAmount = values[0] * diceBet;
+    } else if (count === 2) {
+        if (values[0] === values[1]) {
+            winAmount = values[0] * values[1] * diceBet * 2;
+        } else {
+            winAmount = sum * diceBet;
+        }
     } else {
-        winAmount = sum * diceBet / 2;
+        const unique = new Set(values);
+        if (unique.size === 1) {
+            winAmount = sum * diceBet * 3;
+        } else if (unique.size === 2) {
+            winAmount = sum * diceBet * 1.5;
+        } else {
+            const sorted = [...values].sort((a, b) => a - b);
+            if (sorted[0] + 1 === sorted[1] && sorted[1] + 1 === sorted[2]) {
+                winAmount = sum * diceBet * 2;
+            } else {
+                winAmount = sum * diceBet;
+            }
+        }
     }
     
-    addCoins(winAmount);
-    
+    addCoins(winAmount, "Кости");
     diceSum.textContent = count > 1 ? `Сумма: ${sum}` : '';
-    diceWin.textContent = `Вы выиграли: ${winAmount} монет!`;
-    diceResult.classList.add('win');
+    diceWin.textContent = `Выигрыш: ${winAmount} монет!`;
+    playerStats.totalWins++;
+    saveStats();
 }
 
 function getDiceEmoji(value) {
@@ -490,7 +584,7 @@ function applyCoinSettings() {
 }
 
 function flipCoin(choice) {
-    if (!deductCoins(coinBet)) return;
+    if (!deductCoins(coinBet, "Монетка")) return;
     
     const coin = document.getElementById('coin');
     const resultElement = document.getElementById('coin-result');
@@ -498,19 +592,26 @@ function flipCoin(choice) {
     coin.classList.add('flip');
     resultElement.textContent = '';
     
+    const winChance = 0.5 + (playerStats.luckFactor - 1) * 0.1;
+    const result = Math.random() < winChance ? 'орёл' : 'решка';
+    
     setTimeout(() => {
-        const result = Math.random() > 0.5 ? 'орёл' : 'решка';
         coin.textContent = result === 'орёл' ? '🦅' : '🐠';
         
         if (result === choice) {
-            addCoins(coinWin);
-            resultElement.textContent = `Поздравляем! Выпал ${result}, вы выиграли ${coinWin} монет!`;
-            resultElement.classList.add('win');
+            const winAmount = Math.floor(coinWin * playerStats.luckFactor);
+            addCoins(winAmount, "Монетка");
+            resultElement.textContent = `Поздравляем! Выпал ${result}, вы выиграли ${winAmount} монет!`;
+            playerStats.totalWins++;
+            playerStats.luckFactor += 0.02;
         } else {
             resultElement.textContent = `Увы! Выпал ${result}, а вы выбрали ${choice}.`;
+            playerStats.totalLosses++;
+            playerStats.luckFactor = Math.max(0.8, playerStats.luckFactor - 0.01);
         }
         
         coin.classList.remove('flip');
+        saveStats();
     }, 500);
 }
 
@@ -556,6 +657,7 @@ function addPrizeOption() {
     newOption.className = 'option-row';
     newOption.innerHTML = `
         <input type="text" placeholder="Приз">
+        <input type="number" value="10" min="1" max="100" placeholder="Вес">
         <button onclick="removePrizeOption(this)">❌</button>
     `;
     optionsContainer.appendChild(newOption);
@@ -576,9 +678,18 @@ function applyPrizeSettings() {
     
     for (let row of optionRows) {
         const textInput = row.querySelector('input[type="text"]');
+        const weightInput = row.querySelector('input[type="number"]');
         
         if (textInput.value.trim()) {
-            options.push(textInput.value);
+            const match = textInput.value.match(/(\d+)/);
+            const value = match ? parseInt(match[1]) : 0;
+            const weight = weightInput ? parseInt(weightInput.value) || 10 : 10;
+            
+            options.push({
+                text: textInput.value,
+                value: value,
+                weight: weight
+            });
         }
     }
     
@@ -594,37 +705,45 @@ function applyPrizeSettings() {
 
 function selectPrize(index) {
     if (prizesRevealed) return;
-    if (!deductCoins(prizeBet)) return;
+    if (!deductCoins(prizeBet, "Выбери приз")) return;
     
     prizesRevealed = true;
     const prizeBoxes = document.querySelectorAll('.prize-box');
     const resultElement = document.getElementById('prize-result');
     
-    // Создаем значения призов
-    const prizeValues = [];
-    for (let i = 0; i < prizeOptions.length; i++) {
-        const match = prizeOptions[i].match(/(\d+)/);
-        prizeValues.push(match ? parseInt(match[1]) : 0);
+    const weightedPrizes = prizeOptions.map(prize => ({
+        ...prize,
+        weight: prize.value === 0 ? Math.max(1, prize.weight - 5) : prize.weight
+    }));
+    
+    const prizes = [];
+    for (let i = 0; i < prizeBoxes.length; i++) {
+        prizes.push(getWeightedRandom(weightedPrizes));
     }
     
-    // Показываем все призы
     prizeBoxes.forEach((box, i) => {
         setTimeout(() => {
-            box.textContent = prizeOptions[i] || "Пусто";
-        }, 500);
+            box.textContent = prizes[i].text;
+            box.dataset.value = prizes[i].value;
+        }, 500 + i * 200);
     });
     
-    // Показываем результат выбора
     setTimeout(() => {
-        const winAmount = prizeValues[index] || 0;
+        const selectedPrize = prizes[index];
+        const winAmount = selectedPrize.value;
+        
         if (winAmount > 0) {
-            addCoins(winAmount);
-            resultElement.textContent = `Вы выбрали: ${prizeOptions[index]}!`;
-            resultElement.classList.add('win');
+            addCoins(winAmount, "Приз");
+            resultElement.textContent = `Вы выбрали: ${selectedPrize.text}!`;
+            playerStats.totalWins++;
         } else {
-            resultElement.textContent = `Вы выбрали: ${prizeOptions[index]}`;
+            resultElement.textContent = `Вы выбрали: ${selectedPrize.text}`;
+            playerStats.totalLosses++;
         }
-    }, 1000);
+        
+        resultElement.classList.add('win');
+        saveStats();
+    }, 1500);
 }
 
 function resetPrizes() {
@@ -645,4 +764,31 @@ function getRandomColor() {
         color += letters[Math.floor(Math.random() * 16)];
     }
     return color;
+}
+
+function showNotification(message, type = 'info', duration = 3000) {
+    const notification = document.createElement('div');
+    notification.innerHTML = message;
+    notification.className = `notification notification-${type}`;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transition = 'opacity 0.5s';
+        setTimeout(() => notification.remove(), 500);
+    }, duration);
+}
+
+function showStats() {
+    const statsMessage = `
+        Игр сыграно: ${playerStats.gamesPlayed}<br>
+        Побед: ${playerStats.totalWins}<br>
+        Поражений: ${playerStats.totalLosses}<br>
+        Монет выиграно: ${playerStats.coinsWon}<br>
+        Монет проиграно: ${playerStats.coinsLost}<br>
+        Коэффициент удачи: ${playerStats.luckFactor.toFixed(2)}
+    `;
+    
+    showNotification(statsMessage, 'info', 5000);
 }
